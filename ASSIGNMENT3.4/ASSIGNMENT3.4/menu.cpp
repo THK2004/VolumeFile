@@ -54,10 +54,22 @@ void menu() {
 
 			std::cout << welcome;
 		}
+		else if (c == '3') {
+			std::cout << "3\n";
+			std::cout << "Opening \"kkk\" volume file.\n";
+			std::cout << "(Press Enter if you want to use defaut filepath)\n";
+			std::cout << "Enter the file path: ";
+			string filepath;
+			getline(cin, filepath);
+			std::cout << "Enter the file name: ";
+			string filename;
+			getline(cin, filename);
+			filename += ".dat";
+
+			openVolume(filepath + filename);
+
+			std::cout << welcome;
+		}
 		
 	}
-}
-
-void inputString(string a) {
-
 }
