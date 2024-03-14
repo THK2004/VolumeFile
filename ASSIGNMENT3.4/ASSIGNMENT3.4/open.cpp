@@ -34,8 +34,7 @@ void openVolume(string filepath) {
 
 	readVolumeInfo(buffer, sb, sc, sv);
 	sd = sv - si - nb * sb - sr;
-	cout << sb << " " << sc << " " << sv << " " << sd << endl;
-
+	//cout << sb << " " << sc << " " << sv << " " << sd << endl;
 
 	string welcome =
 		"Successfully open this \"kkk\" volume file.\n"
@@ -81,19 +80,7 @@ void openVolume(string filepath) {
 			std::cout << "Change password successfully\n";
 			std::cout << welcome;
 		}
-		else if (c == 'b' || c == 'B') {
-			
-			/*
-			char entry[64];
-			char filename[24] = "HelloHowAreYou";
-			char extentsion[3];
-			for (int i = 0; i < 3; i++) {
-				extentsion[i] = 'K';
-			}
-			entryCreate(entry, filename, int(strlen(filename)), extentsion, 12, 2000);
-			writeEntry(volume, entry, 7, (si + nb * sb) * BLOCKSIZE);
-			*/
-			
+		else if (c == 'b' || c == 'B') {			
 			std::cout << "B\n";
 			std::cout << "Here is the list of all files:\n";
 			vector<int> fileNumberList;
@@ -185,11 +172,13 @@ void openVolume(string filepath) {
 							continue;
 						}
 						else {
-							string fwelcome = 
+							string fwelcome =
 								"Open file successful.\n"
 								"What is your action?\n"
 								"A. Change password.\n"
 								"B. Export this file.\n"
+								"C. Delete this file.\n"
+								"D. Permanently delete this file.\n"
 								"E. Exit this file.\n"
 								"Enter your action: ";
 							std::cout << fwelcome;
@@ -265,6 +254,104 @@ void openVolume(string filepath) {
 
 									std::cout << "Export file completed.\n";
 									std::cout << fwelcome;
+								}
+								else if (c == 'c' || c == 'C') {
+									std::cout << "C\n";
+									std::cout << "Deleting this file.\n";
+
+									buffer[0] = char(0xE5);
+									writeEntry(volume, buffer, fileNumberList[n - 1], firstEntryPos);
+
+									vector<uint16_t> listOfFileCluster;
+
+									int startCluster = convertLittleEndianToInt(buffer, 58, 2);
+									int fileSize = convertLittleEndianToInt(buffer, 60, 4);
+
+									//seek element manage file clusters
+									uint16_t currentCluster = uint16_t(startCluster);
+									uint16_t nextCluster = 0;
+									do {
+										listOfFileCluster.push_back(currentCluster);
+										volume.seekg(si * BLOCKSIZE + (currentCluster - 2) * ELEMENTSIZE);
+
+										char nextClusterBuffer[ELEMENTSIZE];
+										volume.read(nextClusterBuffer, ELEMENTSIZE);
+
+										//Convert little edian to uint16_t
+										nextCluster = static_cast<uint16_t>(static_cast<uint8_t>(nextClusterBuffer[0])) |
+											(static_cast<uint16_t>(static_cast<uint8_t>(nextClusterBuffer[1])) << 8);
+
+										currentCluster = nextCluster;
+									} while (nextCluster != 0xFFFF);
+
+									//Fill 0x00 to manage element
+									char eleBuffer[ELEMENTSIZE];
+									eleBuffer[0] = char(0x00);
+									eleBuffer[1] = char(0x00);
+									for (int i = 0; i < listOfFileCluster.size(); i++) {
+										writeElementIn2Table(volume, eleBuffer, listOfFileCluster[i], si, sb);
+									}
+
+									std::cout << "Deleting file complete\n";
+									break;
+								}
+								else if (c == 'd' || c == 'D') {
+									std::cout << "D\n";
+									std::cout << "Permantly deleting this file.\n";
+
+									int startCluster = convertLittleEndianToInt(buffer, 58, 2);
+									int fileSize = convertLittleEndianToInt(buffer, 60, 4);
+
+									vector<uint16_t> listOfFileCluster;
+
+									//seek element manage file clusters
+									uint16_t currentCluster = uint16_t(startCluster);
+									uint16_t nextCluster = 0;
+									do {
+										listOfFileCluster.push_back(currentCluster);
+										volume.seekg(si * BLOCKSIZE + (currentCluster - 2) * ELEMENTSIZE);
+
+										char nextClusterBuffer[ELEMENTSIZE];
+										volume.read(nextClusterBuffer, ELEMENTSIZE);
+
+										//Convert little edian to uint16_t
+										nextCluster = static_cast<uint16_t>(static_cast<uint8_t>(nextClusterBuffer[0])) |
+											(static_cast<uint16_t>(static_cast<uint8_t>(nextClusterBuffer[1])) << 8);
+
+										currentCluster = nextCluster;
+									} while (nextCluster != 0xFFFF);
+
+									//Write trash data to these cluster 7 times.
+									char* trashBuffer = new char[sc * BLOCKSIZE];
+									generateRandomData(trashBuffer, sc * BLOCKSIZE);
+									for (int j = 0; j < 7; j++) {
+										for (int i = 0; i < listOfFileCluster.size() - 1; i++) {
+											volume.seekp((si + nb * sb + sr) * BLOCKSIZE + (listOfFileCluster[i] - 2) * sc * BLOCKSIZE);
+											volume.write(trashBuffer, sc * BLOCKSIZE);
+											generateRandomData(trashBuffer, sc * BLOCKSIZE);
+										}
+										volume.seekp((si + nb * sb + sr) * BLOCKSIZE + (listOfFileCluster[listOfFileCluster.size() - 1] - 2) * sc * BLOCKSIZE);
+										volume.write(trashBuffer, fileSize % (sc * BLOCKSIZE));
+									}
+
+									//Free element manage cluster
+									char eleBuffer[ELEMENTSIZE];
+									eleBuffer[0] = char(0x00);
+									eleBuffer[1] = char(0x00);
+
+									for (int i = 0; i < listOfFileCluster.size(); i++) {
+										writeElementIn2Table(volume, eleBuffer, listOfFileCluster[i], si, sb);
+									}
+									
+									//Fill trash in 63 remaining bytes in data entry 
+									char trash[ENTRYSIZE];
+									generateRandomData(trash, ENTRYSIZE);
+									trash[0] = char(0xE5);
+
+									writeEntry(volume, trash, fileNumberList[n - 1], firstEntryPos);
+
+									std::cout << "Permenently deleting complete.\n";
+									break;
 								}
 							}	
 						}
@@ -497,6 +584,12 @@ void importFile(std::fstream& volume, string filepath, int sb_, int sc_, int sv_
 		if (listOfEmptyCluster.size() == numOfCluster) {
 			break;
 		}
+	}
+
+	if (listOfEmptyCluster.size() < numOfCluster) {
+		std::cout << "Fail to importing this file because of insufficient empty space.\n";
+		inputfile.close();
+		return;
 	}
 
 	cout << "List of cluster: ";

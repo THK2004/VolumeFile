@@ -33,6 +33,7 @@ void menu() {
 			std::cout << "Enter volume size (from 8MB to 1GiB (1073741824B)) in bytes: ";
 			int filesize;
 			cin >> filesize;
+			cin.ignore();
 
 			createVolume(filepath + filename, filesize);
 

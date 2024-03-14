@@ -126,6 +126,7 @@ void determineSbScSd(int& sb, int& sd, int& sc, int volumeSize) {
 	while (true) {
 		int n = 0;
 		std::cin >> n;
+		cin.ignore();
 
 		if (n < 1 || n > volumeOption.size()) {
 			std::cout << "Wrong input.\n";
@@ -380,6 +381,7 @@ pair<string, string> argon2PasswordHashing32(string password, int salt_length) {
 		return pair<string, string>();
 	}
 
+	/*
 	// Print the hashed password
 	std::cout << "Hashed Password: ";
 	for (unsigned char byte : hash) {
@@ -391,6 +393,8 @@ pair<string, string> argon2PasswordHashing32(string password, int salt_length) {
 		printf("%02x", byte);
 	}
 	std::cout << std::endl;
+	*/
+
 
 	//convert to string
 	string hashedPassword;
@@ -426,6 +430,7 @@ pair<string, string> argon2PasswordHashing16(string password, int salt_length) {
 		return pair<string, string>();
 	}
 
+	/*
 	// Print the hashed password
 	std::cout << "Hashed Password: ";
 	for (unsigned char byte : hash) {
@@ -437,6 +442,8 @@ pair<string, string> argon2PasswordHashing16(string password, int salt_length) {
 		printf("%02x", byte);
 	}
 	std::cout << std::endl;
+	*/
+
 
 	//convert to string
 	string hashedPassword;
