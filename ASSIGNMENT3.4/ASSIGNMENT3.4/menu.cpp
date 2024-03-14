@@ -61,7 +61,7 @@ void menu() {
 			std::cout << "Enter the file path: ";
 			string filepath;
 			getline(cin, filepath);
-			std::cout << "Enter the file name: ";
+			std::cout << "Enter the file name (without extension): ";
 			string filename;
 			getline(cin, filename);
 			filename += ".dat";

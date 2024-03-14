@@ -42,6 +42,7 @@ void openVolume(string filepath) {
 		"What is your action?\n"
 		"A. Change password\n"
 		"B. List all files in this volume.\n"
+		"C. Import a file into this volume.\n"
 		"E. Exit volume\n"
 		"Enter your choice: ";
 	std::cout << welcome;
@@ -225,11 +226,69 @@ void openVolume(string filepath) {
 									std::cout << "Change password successfully\n";
 									std::cout << fwelcome;
 								}
+								else if (c == 'b' || c == 'B') {
+									std::cout << "B\n";
+									std::cout << "Exporting this file.\n";
+
+									int nameSize = convertLittleEndianToInt(buffer, 26, 1);
+									string filename_;
+									for (int j = 27; j < 27 + nameSize; j++) {
+										filename_ += buffer[j];
+									}
+									string extension;
+									for (int j = 51; j < 54; j++) {
+										extension += buffer[j];
+									}
+
+									int startCluster = convertLittleEndianToInt(buffer, 58, 2);
+									int fileSize = convertLittleEndianToInt(buffer, 60, 4);
+
+									std::cout << "(Press Enter if you want to use defaut filepath (ExportedFile/) )\n";
+									std::cout << "Enter the file path: ";
+									string filepath;
+									getline(cin, filepath);
+									std::cout << "(Press Enter if you want to use this file name)\n";
+									std::cout << "Enter the exported file name without extension: ";
+									string filename;
+									getline(cin, filename);
+
+									if (filepath.empty()) {
+										filepath = "ExportedFile/";
+									}
+									if (filename.empty()) {
+										filename = filename_;
+									}
+
+									filename = filename + '.' + extension;
+
+									exportFile(volume, filepath + filename, startCluster, fileSize, sb, sc, sv);
+
+									std::cout << "Export file completed.\n";
+									std::cout << fwelcome;
+								}
 							}	
 						}
 					}
 				}
 			}
+		}
+		else if (c == 'c' || c == 'C') {
+			std::cout << "C\n";
+			std::cout << "Importing a file.\n";
+			std::cout << "(Press Enter if you want to use defaut filepath (FileToInput/) )\n";
+			std::cout << "Enter the file path: ";
+			string filepath;
+			getline(cin, filepath);
+			std::cout << "Enter the file name with extension: ";
+			string filename;
+			getline(cin, filename);
+			if (filepath.empty()) {
+				filepath = "FileToInput/";
+			}
+
+			importFile(volume, filepath + filename, sb, sc, sv);
+			std::cout << "Import file completed.\n";
+			std::cout << welcome;
 		}
 	}
 
@@ -383,4 +442,209 @@ bool filePasswordVerify(char entry[ENTRYSIZE]) {
 			}
 		}
 	}
+}
+
+void importFile(std::fstream& volume, string filepath, int sb_, int sc_, int sv_) {
+	fstream inputfile(filepath, std::ios::in | std::ios::binary);
+
+	if (!inputfile.is_open()) {
+		std::cout << "Fail to open inputing file.\n";
+		return;
+	}
+
+	std::streampos begin = inputfile.tellg();
+
+	inputfile.seekg(0, std::ios::end);
+
+	std::streampos end = inputfile.tellg();
+
+	std::size_t fileSize = static_cast<std::size_t>(end - begin);
+
+	std::cout << "File size: " << fileSize << endl;
+
+	inputfile.seekg(0, std::ios::beg);
+
+	int si = 1;
+	int nb = 2;
+	int sr = 32;
+	int sv = sv_;
+	int sb = sb_;
+	int sc = sc_;
+	int sd = sv - si - nb * sb - sr;
+
+	int numOfCluster = (int(fileSize) + (sc * BLOCKSIZE) - 1) / (sc * BLOCKSIZE);
+
+	//Find numOfCluster empty cluster in table
+	//Element k manage cluster k
+
+	vector<uint16_t> listOfEmptyCluster;
+
+	volume.seekg(si * BLOCKSIZE);
+	char* tableBuffer = new char[sb * BLOCKSIZE];
+	volume.read(tableBuffer, sb * BLOCKSIZE);
+
+	for (int i = 0; i < sb * BLOCKSIZE; i += 2) {
+		unsigned char byte1 = static_cast<unsigned char>(tableBuffer[i]);
+		unsigned char byte2 = static_cast<unsigned char>(tableBuffer[i + 1]);
+
+		if ((byte1 != 0x00) || (byte2 != 0x00)) {
+			continue;
+		}
+		else {
+			listOfEmptyCluster.push_back(uint16_t(i / 2 + 2));
+		}
+
+		if (listOfEmptyCluster.size() == numOfCluster) {
+			break;
+		}
+	}
+
+	cout << "List of cluster: ";
+	for (uint16_t byte : listOfEmptyCluster) {
+		cout << byte << " ";
+	}
+	cout << endl;
+
+	delete[] tableBuffer;
+
+	char eleBuffer[ELEMENTSIZE];
+	eleBuffer[0] = char(0xFF);
+	eleBuffer[1] = char(0xFF);
+
+	//Write down to 2 table
+	writeElementIn2Table(volume, eleBuffer, listOfEmptyCluster[listOfEmptyCluster.size() - 1], si, sb);
+	for (int i = int(listOfEmptyCluster.size()) - 1; i > 0; i--) {
+		memcpy_s(eleBuffer, ELEMENTSIZE, &listOfEmptyCluster[i], sizeof(listOfEmptyCluster[i]));
+		writeElementIn2Table(volume, eleBuffer, listOfEmptyCluster[i - 1], si, sb);
+	}
+	
+	//Create entry for this file
+	char entry[64];
+	char filename[24];
+	char extentsion[3];
+	int filenameSize = 0;
+
+	for (int i = 0; i < 3; i++) {
+		extentsion[i] = filepath[filepath.size() - 3 + i];
+	}
+
+	size_t pos = filepath.find_last_of('/');
+
+	if (pos != std::string::npos) {
+		int j = 0;
+		while (filenameSize <= 24 && filepath[pos + 1 + j] != '.') {
+			filename[j] = filepath[pos + 1 + j];
+			j++;
+			filenameSize++;
+		}
+	}
+	else {
+		int j = 0;
+		while (filenameSize <= 24 && filepath[j] != '.') {
+			filename[j] = filepath[j];
+			j++;
+			filenameSize++;
+		}
+	}
+
+	int startCluster = int(listOfEmptyCluster[0]);
+
+	entryCreate(entry, filename, filenameSize, extentsion, startCluster, int(fileSize));
+
+	//Find empty spot to write entry
+	int firstEntryPos = (si + nb * sb) * BLOCKSIZE;
+	for (int i = 0; i < sr * BLOCKSIZE / ENTRYSIZE; i++) {	//There are 32 * 512 / 64 = 256 entries in total
+		volume.seekg(firstEntryPos + i * ENTRYSIZE);
+		char byte[1];
+		volume.read(byte, 1);
+		if (static_cast<unsigned char>(byte[0]) == 0x00) {
+			writeEntry(volume, entry, i, firstEntryPos);
+			break;
+		}
+	}
+	
+	//Write data down to correct cluster
+	inputfile.seekg(0, std::ios::beg);
+
+	char* buffer = new char[sc * BLOCKSIZE];
+	for (int i = 0; i < numOfCluster - 1; i++) {
+		inputfile.read(buffer, sc * BLOCKSIZE);
+		volume.seekp((si + nb * sb + sr) * BLOCKSIZE + (listOfEmptyCluster[i] - 2) * sc * BLOCKSIZE);
+		volume.write(buffer, sc * BLOCKSIZE);
+		memset(buffer, '\0', sc * BLOCKSIZE);
+	}
+	memset(buffer, '\0', sc * BLOCKSIZE);
+	inputfile.read(buffer, fileSize % (sc * BLOCKSIZE));
+	volume.seekp((si + nb * sb + sr) * BLOCKSIZE + (listOfEmptyCluster[numOfCluster - 1] - 2) * sc * BLOCKSIZE);
+	volume.write(buffer, fileSize % (sc* BLOCKSIZE));
+
+	delete[] buffer;
+
+	inputfile.close();
+}
+
+void writeElementIn2Table(std::fstream& volume, char data[ELEMENTSIZE], int elementNumber, int si, int sb) {
+	volume.seekp(si * BLOCKSIZE + (elementNumber - 2) * ELEMENTSIZE);
+	volume.write(data, ELEMENTSIZE);
+	volume.seekp((si + sb) * BLOCKSIZE + (elementNumber - 2) * ELEMENTSIZE);
+	volume.write(data, ELEMENTSIZE);
+}
+
+void exportFile(std::fstream& volume, string filepath, int startCluster, int fileSize, int sb_, int sc_, int sv_) {
+	fstream outputFile(filepath, std::ios::out | std::ios::binary | std::ios::trunc);
+
+	int si = 1;
+	int nb = 2;
+	int sr = 32;
+	int sv = sv_;
+	int sb = sb_;
+	int sc = sc_;
+	int sd = sv - si - nb * sb - sr;
+
+	if (!outputFile.is_open()) {
+		std::cout << "Cannot open exported file.\n";
+		return;
+	}
+
+	vector<uint16_t> listOfFileCluster;
+	
+	//seek element manage file clusters
+	uint16_t currentCluster = uint16_t(startCluster);
+	uint16_t nextCluster = 0;
+	do {
+		listOfFileCluster.push_back(currentCluster);
+		volume.seekg(si * BLOCKSIZE + (currentCluster - 2) * ELEMENTSIZE);
+
+		char nextClusterBuffer[ELEMENTSIZE];
+		volume.read(nextClusterBuffer, ELEMENTSIZE);
+
+		//Convert little edian to uint16_t
+		nextCluster = static_cast<uint16_t>(static_cast<uint8_t>(nextClusterBuffer[0])) |
+			(static_cast<uint16_t>(static_cast<uint8_t>(nextClusterBuffer[1])) << 8);
+
+		currentCluster = nextCluster;
+	} while (nextCluster != 0xFFFF);
+
+	cout << "List of cluster: ";
+	for (uint16_t byte : listOfFileCluster) {
+		cout << byte << " ";
+	}
+	cout << endl;
+
+	//Write output file.
+	char* buffer = new char[sc * BLOCKSIZE];
+	for (int i = 0; i < listOfFileCluster.size() - 1; i++) {
+		volume.seekg((si + nb * sb + sr) * BLOCKSIZE + (listOfFileCluster[i] - 2) * sc * BLOCKSIZE);
+		volume.read(buffer, sc * BLOCKSIZE);
+		outputFile.write(buffer, sc * BLOCKSIZE);
+		memset(buffer, '\0', sc * BLOCKSIZE);
+	}
+	memset(buffer, '\0', sc * BLOCKSIZE);
+	volume.seekg((si + nb * sb + sr) * BLOCKSIZE + (listOfFileCluster[listOfFileCluster.size() - 1] - 2) * sc * BLOCKSIZE);
+	volume.read(buffer, fileSize % (sc * BLOCKSIZE));
+	outputFile.write(buffer, fileSize % (sc * BLOCKSIZE));
+
+	delete[] buffer;
+
+	outputFile.close();
 }
